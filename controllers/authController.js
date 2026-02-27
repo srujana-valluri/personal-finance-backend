@@ -1,45 +1,73 @@
+ const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const supabase = require("../config/supabase");
 
-// Register User
-exports.registerUser = async (req, res) => {
-const { name, email, password } = req.body;
+// REGISTER
+const registerUser = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
-try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const { data, error } = await supabase
-    .from("users")
-    .insert([{ name, email, password }])
-    .select();
+      .from("users")
+      .insert([{ name, email, password: hashedPassword }])
+      .select();
 
-    if (error) {
-    return res.status(400).json({ error: error.message });
-    }
+    if (error) throw error;
 
     res.status(201).json({
-    message: "User registered successfully",
-    user: data[0],
+      message: "User registered successfully",
+      user: data[0],
     });
-} catch (err) {
-    res.status(500).json({ error: "Server error" });
-}
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
-//login
-exports.loginUser = async (req, res) => {
-const { email, password } = req.body;
 
-const { data, error } = await supabase
-.from("users")
-.select("*")
-.eq("email", email)
-.eq("password", password)
-.single();
+// LOGIN
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-if (error || !data) {
-    return res.status(401).json({ error: "Invalid email or password" });
-}
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .single();
 
-res.json({
-    message: "Login successful",
-    user: data,
-});
+    if (error || !data) {
+      return res.status(400).json({ message: "User not found" });
+    }
 
+    const isMatch = await bcrypt.compare(password, data.password);
+
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      { id: data.id },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.json({
+      message: "Login successful",
+      token,
+      user: {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ IMPORTANT EXPORT
+module.exports = {
+  registerUser,
+  loginUser,
 };
